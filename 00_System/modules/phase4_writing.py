@@ -473,9 +473,9 @@ def run(project_dir, enable_text_generation=True, enable_image_generation=True, 
                     section_name, section_info, knowhow_content, concept_content, gemini_client
                 )
             else:
-                text, input_tokens, output_tokens = generate_text_with_claude(
-                    section_name, section_info, knowhow_content, concept_content, claude_client
-                )
+            text, input_tokens, output_tokens = generate_text_with_claude(
+                section_name, section_info, knowhow_content, concept_content, claude_client
+            )
             
             if text:
                 # ファイル名を生成

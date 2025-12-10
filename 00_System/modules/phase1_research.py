@@ -8,6 +8,13 @@ from pathlib import Path
 import anthropic
 import os
 
+# Gemini API
+try:
+    from google import genai
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
+
 
 def load_claude_api_key():
     """Claude APIキーを読み込む"""
@@ -31,6 +38,35 @@ def load_claude_api_key():
                             key = key.strip()
                             value = value.strip().strip('"').strip("'")
                             if key == "ANTHROPIC_API_KEY":
+                                return value.strip()
+            except Exception:
+                continue
+    
+    return None
+
+
+def load_gemini_api_key():
+    """Gemini APIキーを読み込む"""
+    api_key = os.environ.get('GEMINI_API_KEY')
+    if api_key:
+        return api_key.strip()
+    
+    env_paths = [
+        Path("/Users/keigo/001_cursor/.env"),
+        Path("/Users/keigo/001_cursor/文字起こしブースター/mioji_share_v2/.env"),
+    ]
+    
+    for env_path in env_paths:
+        if env_path.exists():
+            try:
+                with open(env_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            key, value = line.split("=", 1)
+                            key = key.strip()
+                            value = value.strip().strip('"').strip("'")
+                            if key == "GEMINI_API_KEY":
                                 return value.strip()
             except Exception:
                 continue
@@ -160,28 +196,171 @@ def generate_concept_with_claude(theme, target, claude_client):
         return None, 0, 0
 
 
-def run(project_dir, theme, target):
+def generate_concept_with_gemini(theme, target, gemini_client):
+    """Gemini APIでコンセプトを生成"""
+    prompt = f"""あなたはプロのマーケティングリサーチャーです。Brain/Tips向けの情報商材のコンセプトを設計してください。
+
+【テーマ】
+{theme}
+
+【ターゲット】
+{target}
+
+【タスク】
+以下のフォーマットでコンセプトを設計してください：
+
+# コンセプト定義
+
+## テーマ
+{theme}
+
+## ターゲットペルソナ
+
+### 基本属性
+- 年齢: 
+- 性別: 
+- 職業: 
+- 年収: 
+
+### 抱えている悩み・課題
+1. 
+2. 
+3. 
+
+### 目指している理想の未来
+- 
+
+## 提供価値
+
+### 核となる価値
+- 
+
+### 具体的なメリット
+1. 
+2. 
+3. 
+
+### このnoteを読むことで得られる成果
+- 
+
+## 差別化ポイント
+
+### 競合との違い
+1. 
+2. 
+3. 
+
+### 独自の強み
+- 
+
+## 価格戦略
+
+### 定価設定
+- 4,980円
+
+**根拠**:
+- 情報商材の相場（5,000円前後）
+- 実践的ノウハウの価値
+- 競合価格との比較
+
+### 初回限定価格
+- 初回限定: 100円（24時間限定）
+
+**理由**:
+- 心理的ハードルを極限まで下げる
+- 缶コーヒー1本分の価格で「試しやすさ」を訴求
+- 緊急性（24時間限定）で即決を促す
+- 100円購入者をLINE登録に誘導し、リスト化
+
+### マネタイズ導線
+1. Brain/Tipsで100円note販売
+2. 購入者に特典でLINE登録を促す
+3. LINE登録者に継続的な価値提供
+4. バックエンド商品（高額商品・コンサル）へ誘導
+
+## デザインコンセプト（NanoBanana用）
+
+### カラーパレット
+- メインカラー: ゴールド（#FFD700）- 成功、富、権威を象徴
+- アクセントカラー: ブラック（#000000）- 高級感、信頼性
+- サブカラー: ホワイト（#FFFFFF）- 清潔感、可読性
+
+### デザインスタイル
+- 3Dメタリック質感
+- 太字ゴシック体（ExtraBold/Black）
+- 光沢エフェクト（グロウ、陰影）
+- 動的な抽象背景（光線、粒子、エネルギー波）
+
+### 訴求方向性
+- 成功イメージ（上昇、成長、達成）
+- 緊急性（限定、ラストチャンス）
+- 信頼性（実績、データ、権威）
+
+---
+
+上記のフォーマットに従って、具体的な内容を記載してください。
+"""
+    
+    try:
+        response = gemini_client.models.generate_content(
+            model="models/gemini-2.0-flash",
+            contents=prompt
+        )
+        text = response.text if hasattr(response, "text") else response.candidates[0].content.parts[0].text
+        return text, 0, 0  # Geminiのトークン情報は未集計
+    
+    except Exception as e:
+        print(f"    ❌ Geminiエラー: {str(e)}")
+        return None, 0, 0
+
+
+def run(project_dir, theme, target, prefer_gemini=True):
     """Phase 1実行"""
-    print("  ├─ Claude APIキー読み込み中...")
-    claude_key = load_claude_api_key()
+    # APIキー読み込み
+    gemini_key = load_gemini_api_key() if prefer_gemini else None
+    claude_key = load_claude_api_key() if not prefer_gemini else None
     
-    if not claude_key:
-        print("  ⚠️  Claude APIキーが見つかりません")
-        return None
+    # Gemini優先、なければClaude
+    if prefer_gemini:
+        if gemini_key and GEMINI_AVAILABLE:
+            print("  ├─ Gemini APIキー読み込み中...")
+            print("  │  └─ Gemini APIキー: OK")
+            use_gemini = True
+        else:
+            print("  ├─ Gemini APIキーが見つかりません。Claudeを試します...")
+            claude_key = load_claude_api_key()
+            if not claude_key:
+                print("  ⚠️  Claude APIキーも見つかりません")
+                return None
+            print("  │  └─ Claude APIキー: OK")
+            use_gemini = False
+    else:
+        print("  ├─ Claude APIキー読み込み中...")
+        if not claude_key:
+            print("  ⚠️  Claude APIキーが見つかりません")
+            return None
+        print("  │  └─ Claude APIキー: OK")
+        use_gemini = False
     
-    print("  │  └─ Claude APIキー: OK")
-    
-    # Claude クライアント初期化
-    claude_client = anthropic.Anthropic(api_key=claude_key)
-    
-    # コンセプト生成
-    print("  ├─ コンセプト生成中（Claude API）...")
-    print(f"  │  ├─ テーマ: {theme}")
-    print(f"  │  └─ ターゲット: {target}")
-    
-    concept_text, input_tokens, output_tokens = generate_concept_with_claude(
-        theme, target, claude_client
-    )
+    # クライアント初期化とコンセプト生成
+    if use_gemini:
+        print("  ├─ コンセプト生成中（Gemini API）...")
+        print(f"  │  ├─ テーマ: {theme}")
+        print(f"  │  └─ ターゲット: {target}")
+        
+        gemini_client = genai.Client(api_key=gemini_key, http_options={"api_version": "v1"})
+        concept_text, input_tokens, output_tokens = generate_concept_with_gemini(
+            theme, target, gemini_client
+        )
+    else:
+        print("  ├─ コンセプト生成中（Claude API）...")
+        print(f"  │  ├─ テーマ: {theme}")
+        print(f"  │  └─ ターゲット: {target}")
+        
+        claude_client = anthropic.Anthropic(api_key=claude_key)
+        concept_text, input_tokens, output_tokens = generate_concept_with_claude(
+            theme, target, claude_client
+        )
     
     if not concept_text:
         print("  ⚠️  コンセプト生成失敗")

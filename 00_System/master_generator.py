@@ -90,7 +90,8 @@ def create_project_directory(theme):
 def run_phase1(project_dir, theme, target, config):
     """Phase 1: リサーチ & コンセプト定義"""
     print("\n[Phase 1] リサーチ & コンセプト定義")
-    result = phase1_research.run(project_dir, theme, target)
+    prefer_gemini = config.get('prefer_gemini_for_text', True)
+    result = phase1_research.run(project_dir, theme, target, prefer_gemini=prefer_gemini)
     return result if result else {}
 
 
@@ -99,14 +100,16 @@ def run_phase2(project_dir, phase1_output, config):
     print("\n[Phase 2] ノウハウ抽出")
     keyword = config.get('youtube_keyword', 'Threads 稼ぐ方法')
     max_videos = config.get('max_youtube_videos', 3)
-    result = phase2_knowhow.run(project_dir, keyword=keyword, max_videos=max_videos)
+    prefer_gemini = config.get('prefer_gemini_for_text', True)
+    result = phase2_knowhow.run(project_dir, keyword=keyword, max_videos=max_videos, prefer_gemini=prefer_gemini)
     return result if result else {}
 
 
 def run_phase3(project_dir, phase2_output, config):
     """Phase 3: 構成設計 & ビジュアル計画"""
     print("\n[Phase 3] 構成設計 & ビジュアル計画")
-    result = phase3_structure.run(project_dir)
+    prefer_gemini = config.get('prefer_gemini_for_text', True)
+    result = phase3_structure.run(project_dir, prefer_gemini=prefer_gemini)
     return result if result else {}
 
 

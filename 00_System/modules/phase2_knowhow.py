@@ -12,6 +12,13 @@ import json
 import re
 import tempfile
 
+# Gemini API
+try:
+    from google import genai
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
+
 
 def load_claude_api_key():
     """Claude APIキーを読み込む"""
@@ -35,6 +42,35 @@ def load_claude_api_key():
                             key = key.strip()
                             value = value.strip().strip('"').strip("'")
                             if key == "ANTHROPIC_API_KEY":
+                                return value.strip()
+            except Exception:
+                continue
+    
+    return None
+
+
+def load_gemini_api_key():
+    """Gemini APIキーを読み込む"""
+    api_key = os.environ.get('GEMINI_API_KEY')
+    if api_key:
+        return api_key.strip()
+    
+    env_paths = [
+        Path("/Users/keigo/001_cursor/.env"),
+        Path("/Users/keigo/001_cursor/文字起こしブースター/mioji_share_v2/.env"),
+    ]
+    
+    for env_path in env_paths:
+        if env_path.exists():
+            try:
+                with open(env_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            key, value = line.split("=", 1)
+                            key = key.strip()
+                            value = value.strip().strip('"').strip("'")
+                            if key == "GEMINI_API_KEY":
                                 return value.strip()
             except Exception:
                 continue
@@ -243,19 +279,105 @@ def extract_knowhow_with_claude(video_data_list, concept_content, claude_client)
         return None, 0, 0
 
 
-def run(project_dir, keyword="Threads 稼ぐ方法", max_videos=3):
+def extract_knowhow_with_gemini(video_data_list, concept_content, gemini_client):
+    """Gemini APIでノウハウを抽出"""
+    # 動画情報をまとめる
+    videos_summary = ""
+    for i, video in enumerate(video_data_list, 1):
+        videos_summary += f"\n\n【動画{i}】\nタイトル: {video['title']}\n再生回数: {video['views']}\n\n字幕:\n{video['transcript'][:3000]}...\n"
+    
+    prompt = f"""あなたはプロのコンテンツリサーチャーです。以下のYouTube動画の字幕から、実践的なノウハウとテクニックを抽出してください。
+
+【コンセプト】
+{concept_content}
+
+【YouTube動画の字幕】
+{videos_summary}
+
+【タスク】
+以下のフォーマットでノウハウを抽出してください：
+
+# ノウハウ抽出
+
+## 主要ノウハウマトリクス
+
+| 項目 | 動画1 | 動画2 | 動画3 | 採用ノウハウ |
+|------|-------|-------|-------|------------|
+| 基本戦略 | ... | ... | ... | ... |
+| 収益化手法 | ... | ... | ... | ... |
+| プロフィール設計 | ... | ... | ... | ... |
+| 投稿戦略 | ... | ... | ... | ... |
+| AI活用法 | ... | ... | ... | ... |
+
+## 実践テクニック
+
+### 1. [テクニック名]
+- 具体的な手順
+- ポイント
+- 注意点
+
+### 2. [テクニック名]
+...
+
+## よくある失敗パターン
+
+1. ...
+2. ...
+
+## 重要な注意点
+
+- ...
+
+【抽出ルール】
+1. 発信者名や動画タイトルは一切記載しない
+2. ノウハウとテクニックのみを抽出
+3. 具体的で実践可能な内容に絞る
+4. 複数の動画で共通する内容を優先
+5. マトリクスは簡潔に（各セル100文字以内）
+
+それでは抽出を開始してください。
+"""
+    
+    try:
+        response = gemini_client.models.generate_content(
+            model="models/gemini-2.0-flash",
+            contents=prompt
+        )
+        text = response.text if hasattr(response, "text") else response.candidates[0].content.parts[0].text
+        return text, 0, 0  # Geminiのトークン情報は未集計
+    
+    except Exception as e:
+        print(f"    ❌ Geminiエラー: {str(e)}")
+        return None, 0, 0
+
+
+def run(project_dir, keyword="Threads 稼ぐ方法", max_videos=3, prefer_gemini=True):
     """Phase 2実行"""
-    print("  ├─ Claude APIキー読み込み中...")
-    claude_key = load_claude_api_key()
+    # APIキー読み込み
+    gemini_key = load_gemini_api_key() if prefer_gemini else None
+    claude_key = load_claude_api_key() if not prefer_gemini else None
     
-    if not claude_key:
-        print("  ⚠️  Claude APIキーが見つかりません")
-        return None
-    
-    print("  │  └─ Claude APIキー: OK")
-    
-    # Claude クライアント初期化
-    claude_client = anthropic.Anthropic(api_key=claude_key)
+    # Gemini優先、なければClaude
+    if prefer_gemini:
+        if gemini_key and GEMINI_AVAILABLE:
+            print("  ├─ Gemini APIキー読み込み中...")
+            print("  │  └─ Gemini APIキー: OK")
+            use_gemini = True
+        else:
+            print("  ├─ Gemini APIキーが見つかりません。Claudeを試します...")
+            claude_key = load_claude_api_key()
+            if not claude_key:
+                print("  ⚠️  Claude APIキーも見つかりません")
+                return None
+            print("  │  └─ Claude APIキー: OK")
+            use_gemini = False
+    else:
+        print("  ├─ Claude APIキー読み込み中...")
+        if not claude_key:
+            print("  ⚠️  Claude APIキーが見つかりません")
+            return None
+        print("  │  └─ Claude APIキー: OK")
+        use_gemini = False
     
     # コンセプトを読み込み
     print("  ├─ コンセプト読み込み中...")
@@ -326,10 +448,18 @@ def run(project_dir, keyword="Threads 稼ぐ方法", max_videos=3):
     print(f"  │  └─ {len(video_data_list)}件の字幕を取得")
     
     # ノウハウ抽出
-    print("  ├─ ノウハウ抽出中（Claude API）...")
-    knowhow_text, input_tokens, output_tokens = extract_knowhow_with_claude(
-        video_data_list, concept_content, claude_client
-    )
+    if use_gemini:
+        print("  ├─ ノウハウ抽出中（Gemini API）...")
+        gemini_client = genai.Client(api_key=gemini_key, http_options={"api_version": "v1"})
+        knowhow_text, input_tokens, output_tokens = extract_knowhow_with_gemini(
+            video_data_list, concept_content, gemini_client
+        )
+    else:
+        print("  ├─ ノウハウ抽出中（Claude API）...")
+        claude_client = anthropic.Anthropic(api_key=claude_key)
+        knowhow_text, input_tokens, output_tokens = extract_knowhow_with_claude(
+            video_data_list, concept_content, claude_client
+        )
     
     if not knowhow_text:
         print("  ⚠️  ノウハウ抽出失敗")

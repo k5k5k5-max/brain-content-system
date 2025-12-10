@@ -10,6 +10,14 @@ import os
 import json
 
 
+# Gemini API
+try:
+    from google import genai
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
+
+
 def load_claude_api_key():
     """Claude APIキーを読み込む"""
     api_key = os.environ.get('ANTHROPIC_API_KEY')
@@ -32,6 +40,35 @@ def load_claude_api_key():
                             key = key.strip()
                             value = value.strip().strip('"').strip("'")
                             if key == "ANTHROPIC_API_KEY":
+                                return value.strip()
+            except Exception:
+                continue
+    
+    return None
+
+
+def load_gemini_api_key():
+    """Gemini APIキーを読み込む"""
+    api_key = os.environ.get('GEMINI_API_KEY')
+    if api_key:
+        return api_key.strip()
+    
+    env_paths = [
+        Path("/Users/keigo/001_cursor/.env"),
+        Path("/Users/keigo/001_cursor/文字起こしブースター/mioji_share_v2/.env"),
+    ]
+    
+    for env_path in env_paths:
+        if env_path.exists():
+            try:
+                with open(env_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            key, value = line.split("=", 1)
+                            key = key.strip()
+                            value = value.strip().strip('"').strip("'")
+                            if key == "GEMINI_API_KEY":
                                 return value.strip()
             except Exception:
                 continue
@@ -144,6 +181,108 @@ JSONのみを出力してください（説明文は不要）。
         return None, 0, 0
 
 
+
+def generate_structure_with_gemini(knowhow_content, concept_content, gemini_client):
+    """Gemini APIで構成プランを生成"""
+    prompt = f"""あなたはプロのコンテンツ設計者です。以下のノウハウとコンセプトから、Brain/Tips向けの最適な記事構成を設計してください。
+
+【ノウハウ】
+{knowhow_content}
+
+【コンセプト】
+{concept_content}
+
+【タスク】
+以下のフォーマットで記事構成を設計してください：
+
+1. **無料パート**（5-8セクション）
+   - 読者の興味を引き、有料パートへ誘導する
+   - セクションごとに：見出し、目的、文字数目安、必要な画像
+
+2. **有料パート**（5-7セクション/STEP）
+   - 実践的なノウハウを段階的に提供
+   - 各STEPごとに：見出し、目的、文字数目安、必要な画像
+
+3. **ボーナスパート**（1セクション）
+   - 購入者限定特典（LINE登録誘導）
+   - 標準3大特典：
+     - ① 14日間無制限LINEサポート
+     - ② AI活用プロンプト集50選
+     - ③ 0→1達成ロードマップ（30日版）
+
+【画像の種類】
+- イラスト（ill_*.png）: 概念図、フロー図、ビフォーアフターなど
+- バナー（banner_*.png）: セクション見出し画像
+- テキストバナー（text_banner_*.png）: 強調訴求、データ、価格など
+- ボーナスサムネイル（bonus_thumb_*.png）: 特典サムネイル
+
+【出力フォーマット】
+以下のJSON形式で出力してください：
+
+```json
+{{
+  "free_sections": [
+    {{
+      "title": "セクション見出し",
+      "purpose": "このセクションの目的",
+      "chars": "文字数目安（例: 800-1000）",
+      "images": [
+        {{"filename": "ill_example.png", "type": "イラスト", "description": "画像の内容説明", "position": "後"}}
+      ]
+    }}
+  ],
+  "paid_sections": [
+    {{
+      "title": "STEP 1: タイトル",
+      "purpose": "このSTEPの目的",
+      "chars": "文字数目安",
+      "images": [...]
+    }}
+  ],
+  "bonus_section": {{
+    "title": "購入者限定追加特典",
+    "purpose": "LINE登録誘導",
+    "chars": "500-700",
+    "images": [
+      {{"filename": "bonus_thumb_01_line_support.png", "type": "サムネイル", "description": "14日間無制限LINEサポート", "position": "後"}},
+      {{"filename": "bonus_thumb_02_ai_prompts.png", "type": "サムネイル", "description": "AI活用プロンプト集50選", "position": "後"}},
+      {{"filename": "bonus_thumb_03_roadmap.png", "type": "サムネイル", "description": "0→1達成ロードマップ", "position": "後"}}
+    ]
+  }}
+}}
+```
+
+JSONのみを出力してください（説明文は不要）。
+"""
+    
+    try:
+        response = gemini_client.models.generate_content(
+            model="models/gemini-2.0-flash",
+            contents=prompt
+        )
+        text = response.text if hasattr(response, "text") else response.candidates[0].content.parts[0].text
+        
+        # JSONを抽出（```json ... ``` の中身）
+        if "```json" in text:
+            json_start = text.find("```json") + 7
+            json_end = text.find("```", json_start)
+            json_text = text[json_start:json_end].strip()
+        elif "```" in text:
+            json_start = text.find("```") + 3
+            json_end = text.find("```", json_start)
+            json_text = text[json_start:json_end].strip()
+        else:
+            json_text = text.strip()
+        
+        structure_data = json.loads(json_text)
+        
+        return structure_data, 0, 0  # Geminiのトークン情報は未集計
+    
+    except Exception as e:
+        print(f"    ❌ Geminiエラー: {str(e)}")
+        return None, 0, 0
+
+
 def format_structure_plan_md(structure_data):
     """構成データをstructure_plan.mdのフォーマットに変換"""
     lines = [
@@ -209,19 +348,33 @@ def format_structure_plan_md(structure_data):
     return "\n".join(lines)
 
 
-def run(project_dir):
+def run(project_dir, prefer_gemini=True):
     """Phase 3実行"""
-    print("  ├─ Claude APIキー読み込み中...")
-    claude_key = load_claude_api_key()
+    # APIキー読み込み
+    gemini_key = load_gemini_api_key() if prefer_gemini else None
+    claude_key = load_claude_api_key() if not prefer_gemini else None
     
-    if not claude_key:
-        print("  ⚠️  Claude APIキーが見つかりません")
-        return None
-    
-    print("  │  └─ Claude APIキー: OK")
-    
-    # Claude クライアント初期化
-    claude_client = anthropic.Anthropic(api_key=claude_key)
+    # Gemini優先、なければClaude
+    if prefer_gemini:
+        if gemini_key and GEMINI_AVAILABLE:
+            print("  ├─ Gemini APIキー読み込み中...")
+            print("  │  └─ Gemini APIキー: OK")
+            use_gemini = True
+        else:
+            print("  ├─ Gemini APIキーが見つかりません。Claudeを試します...")
+            claude_key = load_claude_api_key()
+            if not claude_key:
+                print("  ⚠️  Claude APIキーも見つかりません")
+                return None
+            print("  │  └─ Claude APIキー: OK")
+            use_gemini = False
+    else:
+        print("  ├─ Claude APIキー読み込み中...")
+        if not claude_key:
+            print("  ⚠️  Claude APIキーが見つかりません")
+            return None
+        print("  │  └─ Claude APIキー: OK")
+        use_gemini = False
     
     # ノウハウとコンセプトを読み込み
     print("  ├─ ノウハウ & コンセプト読み込み中...")
