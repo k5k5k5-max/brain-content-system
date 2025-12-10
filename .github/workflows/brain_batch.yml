@@ -1,0 +1,48 @@
+name: Brain Daily Batch
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 3 * * *" # JST午前12:30相当（UTC 03:30）。必要に応じて変更。
+
+jobs:
+  run-batch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      # 必須: GitHub Secrets に設定してください
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      LINE_NOTIFY_TOKEN: ${{ secrets.LINE_NOTIFY_TOKEN }}
+      # 任意: Claudeを使う場合
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      # 任意: Phase2でYouTube APIを使う場合に備えて
+      YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies (minimal)
+        run: |
+          pip install --upgrade pip
+          pip install anthropic google-generativeai youtube_transcript_api requests python-dotenv
+
+      - name: Run batch (Geminiでテキスト生成)
+        run: |
+          python 00_System/batch_runner.py \
+            --theme-file 00_System/theme_list.txt \
+            --config 00_System/test_config.json \
+            --target "副業初心者の20代会社員"
+
+      - name: Upload logs as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: brain-batch-logs
+          path: /tmp/brain_batch_logs/**
+
+
