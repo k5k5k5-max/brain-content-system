@@ -90,8 +90,19 @@ def merge_config(base_config: Path, prefer_gemini_for_text: bool = True) -> Path
     return tmp
 
 
-def run_one(theme: str, target: str, config_path: Path, log_dir: Path) -> bool:
-    """Run master_generator for a single theme."""
+def run_one(theme: str, target: str, config_path: Path, log_dir: Path) -> dict:
+    """
+    Run master_generator for a single theme.
+    
+    Returns:
+        dict: {
+            "success": bool,
+            "theme": str,
+            "drive_url": str,
+            "total_chars": int,
+            "image_count": int
+        }
+    """
     log_dir.mkdir(parents=True, exist_ok=True)
     log_file = log_dir / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{theme[:24].replace(' ', '_')}.log"
     cmd = [
@@ -110,7 +121,24 @@ def run_one(theme: str, target: str, config_path: Path, log_dir: Path) -> bool:
         f.write(proc.stdout)
     ok = proc.returncode == 0
     print(f"✅ success: {theme}" if ok else f"❌ failed: {theme}")
-    return ok
+    
+    # 結果ファイルを読み取り
+    result = {"success": ok, "theme": theme, "drive_url": "", "total_chars": 0, "image_count": 0}
+    if ok:
+        # プロジェクトディレクトリを探す
+        date_str = datetime.now().strftime("%Y%m%d")
+        theme_short = theme.replace(" ", "_")[:20]
+        project_name = f"{date_str}_{theme_short}"
+        result_file = PROJECT_ROOT / "03_Projects" / project_name / "result.json"
+        if result_file.exists():
+            try:
+                with open(result_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    result.update(data)
+            except Exception as e:
+                print(f"⚠️  result.json読み取りエラー: {e}")
+    
+    return result
 
 
 def main():
@@ -137,22 +165,37 @@ def main():
 
     success = 0
     fail = 0
+    results = []
     for idx, theme in enumerate(themes, 1):
         msg_head = f"[{idx}/{len(themes)}] {theme}"
         send_line_notify(line_token, f"▶️ {msg_head}")
-        ok = run_one(theme, args.target, cfg, log_dir)
-        if ok:
+        result = run_one(theme, args.target, cfg, log_dir)
+        results.append(result)
+        
+        if result["success"]:
             success += 1
-            send_line_notify(line_token, f"✅ {msg_head}")
+            # 成功時にドライブURLを含めて通知
+            msg = f"✅ {msg_head}\n"
+            if result.get("drive_url"):
+                msg += f"📂 {result['drive_url']}\n"
+            msg += f"📝 {result.get('total_chars', 0):,}文字 | 🖼 {result.get('image_count', 0)}枚"
+            send_line_notify(line_token, msg)
         else:
             fail += 1
             send_line_notify(line_token, f"❌ {msg_head}")
         time.sleep(1)  # 軽いウェイト
 
-    send_line_notify(
-        line_token,
-        f"🏁 Brainバッチ完了: 成功{success}/失敗{fail} (batch_id={batch_id})\nログ: {log_dir}",
-    )
+    # 最終サマリー
+    summary_msg = f"🏁 Brainバッチ完了: 成功{success}/失敗{fail}\n\n"
+    if success > 0:
+        summary_msg += "【完成した記事】\n"
+        for r in results:
+            if r["success"]:
+                summary_msg += f"✅ {r['theme']}\n"
+                if r.get("drive_url"):
+                    summary_msg += f"   🔗 {r['drive_url']}\n"
+    
+    send_line_notify(line_token, summary_msg)
     print(f"完了: 成功{success}, 失敗{fail}, ログ: {log_dir}")
 
 

@@ -3,6 +3,8 @@
   "max_youtube_videos": 3,
   "enable_text_generation": true,
   "enable_image_generation": true,
-  "prefer_gemini_for_text": true
+  "prefer_gemini_for_text": true,
+  "enable_drive_upload": true,
+  "google_drive_folder_id": "1P8RssQ4VfMCmc-cB6NelrAtMKVljNdg_"
 }
 

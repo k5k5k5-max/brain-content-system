@@ -15,7 +15,7 @@ import json
 sys.path.insert(0, str(Path(__file__).parent))
 
 from modules import phase1_research, phase2_knowhow, phase3_structure
-from modules import phase4_writing, phase5_integration
+from modules import phase4_writing, phase5_integration, phase6_drive_upload
 
 
 def print_header():
@@ -46,9 +46,18 @@ def print_footer(start_time, stats):
     print(f"  ✅ {stats['output_md']}")
     print(f"  ✅ {stats['output_html']}")
     print(f"  ✅ {stats['output_zip']}")
+    
+    if stats.get('drive_url'):
+        print(f"\n📂 Googleドライブ:")
+        print(f"  🔗 {stats['drive_url']}")
+    
     print(f"\n🚀 次のステップ:")
-    print("  1. final_article.htmlをBrainにアップロード")
-    print("  2. images.zipを解凍して画像を配置")
+    if stats.get('drive_url'):
+        print("  1. 外注さんにGoogleドライブのリンクを共有")
+        print("  2. Brain/Tipsにアップロード依頼")
+    else:
+        print("  1. final_article.htmlをBrainにアップロード")
+        print("  2. images.zipを解凍して画像を配置")
     print("  3. 価格設定（推奨: 4,980円 → 100円 24時間限定）")
     print("  4. LINE登録リンクを設定")
     print("━" * 60)
@@ -123,6 +132,17 @@ def run_phase5(project_dir, phase4_output, config):
     return result if result else {}
 
 
+def run_phase6(project_dir, phase5_output, config, theme):
+    """Phase 6: Googleドライブアップロード"""
+    # Phase 6が無効の場合はスキップ
+    if not config.get('enable_drive_upload', False):
+        return {}
+    
+    print("\n[Phase 6] Googleドライブアップロード")
+    result = phase6_drive_upload.run(project_dir, theme, config)
+    return result if result else {}
+
+
 def main():
     """メイン処理"""
     parser = argparse.ArgumentParser(description="Brain Content System Ver2.0")
@@ -169,6 +189,9 @@ def main():
     # Phase 5
     phase5_output = run_phase5(project_dir, phase4_output, config)
     
+    # Phase 6
+    phase6_output = run_phase6(project_dir, phase5_output, config, args.theme)
+    
     # 統計情報
     total_input_tokens = (
         phase1_output.get('input_tokens', 0) +
@@ -197,11 +220,25 @@ def main():
         "total_cost": total_cost,
         "output_md": phase5_output.get("final_md", ""),
         "output_html": phase5_output.get("final_html", ""),
-        "output_zip": phase5_output.get("images_zip", "")
+        "output_zip": phase5_output.get("images_zip", ""),
+        "drive_url": phase6_output.get("folder_url", "") if phase6_output else ""
     }
     
     # フッター表示
     print_footer(start_time, stats)
+    
+    # 結果をJSONファイルに保存（batch_runner用）
+    result_file = project_dir / "result.json"
+    with open(result_file, "w", encoding="utf-8") as f:
+        json.dump({
+            "success": True,
+            "theme": args.theme,
+            "project_dir": str(project_dir),
+            "drive_url": stats.get("drive_url", ""),
+            "total_chars": stats["total_chars"],
+            "image_count": stats["image_count"],
+            "total_cost": stats["total_cost"]
+        }, f, ensure_ascii=False, indent=2)
 
 
 if __name__ == "__main__":
