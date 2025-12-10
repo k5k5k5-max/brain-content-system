@@ -11,19 +11,73 @@ import os
 # Google Drive API
 try:
     from google.oauth2 import service_account
+    from google.oauth2.credentials import Credentials
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    from google.auth.transport.requests import Request
     from googleapiclient.discovery import build
     from googleapiclient.http import MediaFileUpload
+    import pickle
     GOOGLE_DRIVE_AVAILABLE = True
 except ImportError:
     GOOGLE_DRIVE_AVAILABLE = False
     print("⚠️  Google Drive APIパッケージがインストールされていません")
+
+# OAuth 2.0のスコープ
+SCOPES = ['https://www.googleapis.com/auth/drive.file']
+
+
+def get_oauth_credentials(oauth_credentials_path: str = None, token_path: str = None):
+    """
+    OAuth 2.0認証を行い、認証情報を取得
+    
+    Args:
+        oauth_credentials_path: OAuth 2.0クライアントIDのJSONファイルパス
+        token_path: 保存されたトークンのパス
+    
+    Returns:
+        Credentials: 認証情報
+    """
+    if not oauth_credentials_path:
+        oauth_credentials_path = str(Path.home() / ".config" / "gcloud" / "oauth_credentials.json")
+    
+    if not token_path:
+        token_path = str(Path.home() / ".config" / "gcloud" / "token.pickle")
+    
+    creds = None
+    
+    # 保存されたトークンを読み込み
+    if os.path.exists(token_path):
+        with open(token_path, 'rb') as token:
+            creds = pickle.load(token)
+    
+    # 認証が必要な場合
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            print("  │  ├─ トークンを更新中...")
+            creds.refresh(Request())
+        else:
+            if not os.path.exists(oauth_credentials_path):
+                raise FileNotFoundError(f"OAuth認証情報が見つかりません: {oauth_credentials_path}")
+            
+            print("  │  ├─ 初回認証中... ブラウザが開きます")
+            flow = InstalledAppFlow.from_client_secrets_file(
+                oauth_credentials_path, SCOPES)
+            creds = flow.run_local_server(port=0)
+        
+        # トークンを保存
+        with open(token_path, 'wb') as token:
+            pickle.dump(creds, token)
+        print("  │  │  └─ トークンを保存しました")
+    
+    return creds
 
 
 def upload_to_google_drive(
     project_dir: Path,
     theme_name: str,
     credentials_path: str = None,
-    parent_folder_id: str = "1P8RssQ4VfMCmc-cB6NelrAtMKVljNdg_"  # ユーザー提供のフォルダID
+    parent_folder_id: str = "1P8RssQ4VfMCmc-cB6NelrAtMKVljNdg_",  # ユーザー提供のフォルダID
+    use_oauth: bool = True  # デフォルトでOAuth認証を使用
 ):
     """
     Googleドライブに記事をアップロード
@@ -31,8 +85,9 @@ def upload_to_google_drive(
     Args:
         project_dir: プロジェクトディレクトリ（例: 03_Projects/20241210_テーマ名/）
         theme_name: テーマ名
-        credentials_path: サービスアカウントJSONファイルのパス
+        credentials_path: サービスアカウントJSONファイルのパス（use_oauth=Falseの場合）
         parent_folder_id: アップロード先の親フォルダID
+        use_oauth: OAuth認証を使用するか（デフォルト: True）
     
     Returns:
         dict: {
@@ -53,42 +108,41 @@ def upload_to_google_drive(
             "error": "Google Drive APIパッケージがインストールされていません"
         }
     
-    # 認証情報のパスを取得
-    if not credentials_path:
-        # 環境変数から取得
-        credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-        if not credentials_path:
-            # デフォルトパスを試す
-            default_paths = [
-                Path.home() / ".config" / "gcloud" / "brain-drive-service-account.json",
-                Path.cwd() / "brain-drive-credentials.json",
-            ]
-            for path in default_paths:
-                if path.exists():
-                    credentials_path = str(path)
-                    break
-    
-    if not credentials_path or not Path(credentials_path).exists():
-        print("  ⚠️  Googleドライブ認証情報が見つかりません")
-        print("  📝 セットアップ方法:")
-        print("     1. Google Cloud Consoleでサービスアカウントを作成")
-        print("     2. JSONキーをダウンロード")
-        print("     3. 環境変数 GOOGLE_APPLICATION_CREDENTIALS に設定")
-        print("     または ~/.config/gcloud/brain-drive-service-account.json に保存")
-        return {
-            "success": False,
-            "error": "認証情報が見つかりません"
-        }
-    
     try:
         # 認証
-        print(f"  ├─ 認証中... ({credentials_path})")
-        credentials = service_account.Credentials.from_service_account_file(
-            credentials_path,
-            scopes=['https://www.googleapis.com/auth/drive.file']
-        )
+        if use_oauth:
+            print(f"  ├─ OAuth認証中...")
+            credentials = get_oauth_credentials()
+            print("  │  └─ ✅ 認証成功")
+        else:
+            # サービスアカウント認証（従来の方法）
+            if not credentials_path:
+                credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+                if not credentials_path:
+                    default_paths = [
+                        Path.home() / ".config" / "gcloud" / "brain-drive-service-account.json",
+                        Path.cwd() / "brain-drive-credentials.json",
+                    ]
+                    for path in default_paths:
+                        if path.exists():
+                            credentials_path = str(path)
+                            break
+            
+            if not credentials_path or not Path(credentials_path).exists():
+                print("  ⚠️  Googleドライブ認証情報が見つかりません")
+                return {
+                    "success": False,
+                    "error": "認証情報が見つかりません"
+                }
+            
+            print(f"  ├─ 認証中... ({credentials_path})")
+            credentials = service_account.Credentials.from_service_account_file(
+                credentials_path,
+                scopes=['https://www.googleapis.com/auth/drive.file']
+            )
+            print("  │  └─ ✅ 認証成功")
+        
         service = build('drive', 'v3', credentials=credentials)
-        print("  │  └─ ✅ 認証成功")
         
         # 年月フォルダを作成（例: 2024年12月）
         now = datetime.now()
