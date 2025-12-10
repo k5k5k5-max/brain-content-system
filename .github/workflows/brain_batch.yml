@@ -29,8 +29,7 @@ jobs:
       - name: Install dependencies (minimal)
         run: |
           pip install --upgrade pip
-          pip install anthropic google-generativeai youtube_transcript_api requests python-dotenv
-
+          pip install anthropic google-genai youtube_transcript_api requests python-dotenv
       - name: Run batch (Geminiでテキスト生成)
         run: |
           python 00_System/batch_runner.py \
