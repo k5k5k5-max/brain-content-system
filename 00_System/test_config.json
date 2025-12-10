@@ -1,0 +1,8 @@
+{
+  "youtube_keyword": "Threads 稼ぐ方法",
+  "max_youtube_videos": 3,
+  "enable_text_generation": true,
+  "enable_image_generation": true,
+  "prefer_gemini_for_text": true
+}
+

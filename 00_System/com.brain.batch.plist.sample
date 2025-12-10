@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.brain.batch</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/Users/keigo/001_cursor/Brain_Content_System_Ver2/00_System/batch_runner.py</string>
+        <string>--theme-file</string>
+        <string>/Users/keigo/001_cursor/Brain_Content_System_Ver2/theme_list.txt</string>
+        <string>--config</string>
+        <string>/Users/keigo/001_cursor/Brain_Content_System_Ver2/00_System/test_config.json</string>
+        <string>--target</string>
+        <string>副業初心者の20代会社員</string>
+    </array>
+
+    <!-- 毎日 03:30 に実行 -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key><integer>3</integer>
+        <key>Minute</key><integer>30</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/brain_batch_launchd.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/brain_batch_launchd.err</string>
+
+    <!-- 定刻実行のみ。落ちっぱなしでも再起動しない -->
+    <key>RunAtLoad</key><false/>
+    <key>KeepAlive</key><false/>
+</dict>
+</plist>
+
+
